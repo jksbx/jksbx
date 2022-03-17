@@ -7,10 +7,11 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"jksbx/internal/pkg/jksb"
 	"jksbx/pkg/captcha"
 	"jksbx/pkg/cas"
-	"net/http"
 	"os"
+	"time"
 )
 
 //go:embed model.bin
@@ -19,44 +20,49 @@ var defaultModelData []byte
 func main() {
 	fmt.Println("Hello from jksbx.")
 
+	fakeHeader := map[string]string{
+		"Connection":                "keep-alive",
+		"sec-ch-ua":                 `" Not A;Brand";v="99", "Chromium";v="99"`,
+		"sec-ch-ua-mobile":          "?0",
+		"sec-ch-ua-Linux":           `"Linux"`,
+		"Upgrade-Insecure-Requests": "1",
+		"User-Agent":                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.4844.74 Safari/537.36",
+		"Accept":                    `text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9`,
+		"Sec-Fetch-Site":            "none",
+		"Sec-Fetch-Mode":            "navigate",
+		"Sec-Fetch-User":            "?1",
+		"Sec-Fetch-Dest":            "document",
+		"Accept-Encoding":           "gzip, deflate, br",
+		"Accept-Language":           "en-US,en;q=0.9",
+	}
+
 	m, err := captcha.LoadModel(bytes.NewReader(defaultModelData))
 	if err != nil {
 		fmt.Println(err)
 	}
 	captcha.Initialize(m)
 
-	var tgc *http.Cookie = nil
-	for turn := 0; turn < 5; turn++ {
-		var captchaImage image.Image
-		var jsessionid *http.Cookie
-		var err error
-		capt := ""
-
-		for tries := 0; tries < 10; tries++ {
-			captchaImage, jsessionid, err = cas.NewSessionAndGetRawCaptcha()
-			if err != nil {
-				continue
-			}
-
-			capt = captcha.Recognize(captchaImage)
-			if capt != "" {
-				break
-			}
-		}
-
-		tgc, err = cas.LoginCas("NetID", "Password", capt, jsessionid)
-		if err != nil {
-			continue
-		}
-
-		if tgc != nil {
-			break
-		}
+	captchaImage, jsessionid, _ := cas.NewSessionAndGetRawCaptcha(fakeHeader)
+	capt := captcha.Recognize(captchaImage)
+	if capt == "" {
+		panic("captcha not recognized")
+	}
+	tgc, err := cas.LoginCas("NetID", "Password", capt, jsessionid, fakeHeader)
+	if err != nil {
+		panic(err)
+	}
+	if tgc == nil {
+		panic("login fail")
 	}
 
-	if tgc == nil {
-		fmt.Println("TGC not get")
-		return
+	s := jksb.NewSession(time.Minute * 2)
+	err = s.LoginJksb(tgc, jsessionid, fakeHeader)
+	if err != nil {
+		fmt.Println("Error: " + err.Error())
+	}
+	err = s.SubmitJksb()
+	if err != nil {
+		fmt.Println("Error: " + err.Error())
 	}
 }
 
@@ -72,7 +78,7 @@ func InteractiveTrain(filename string) captcha.Model {
 	reader := bufio.NewReader(os.Stdin)
 
 	for {
-		captchaImage, _, err := cas.NewSessionAndGetRawCaptcha()
+		captchaImage, _, err := cas.NewSessionAndGetRawCaptcha(map[string]string{})
 		if err != nil {
 			fmt.Println("获取验证码失败：" + err.Error())
 			continue

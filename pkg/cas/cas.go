@@ -20,7 +20,7 @@ const (
 
 // LoginCas 用给定的用户名，密码，验证码来登录cas系统，注意登录前需要先
 // 获取一次验证码。返回登录态cookie，若登录失败则为nil。
-func LoginCas(username, password, captcha string, jsessionid *http.Cookie) (*http.Cookie, error) {
+func LoginCas(username, password, captcha string, jsessionid *http.Cookie, fakeHeader map[string]string) (*http.Cookie, error) {
 	form := url.Values{
 		"username":    []string{username},
 		"password":    []string{password},
@@ -31,7 +31,12 @@ func LoginCas(username, password, captcha string, jsessionid *http.Cookie) (*htt
 	}
 
 	// 找到HTML源码里的execution，登录表单需要用到。
-	resp, err := http.Get(CAS_LOGIN_URL)
+	req, err := http.NewRequest("GET", CAS_LOGIN_URL, nil)
+	if err != nil {
+		return nil, err
+	}
+	addHeaders(req, fakeHeader)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -56,10 +61,11 @@ func LoginCas(username, password, captcha string, jsessionid *http.Cookie) (*htt
 	form["execution"][0] = body[start:end]
 
 	// 构造请求的Header和Cookie
-	req, err := http.NewRequest("POST", CAS_LOGIN_URL, strings.NewReader(form.Encode()))
+	req, err = http.NewRequest("POST", CAS_LOGIN_URL, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
 	}
+	addHeaders(req, fakeHeader)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(jsessionid)
 
@@ -68,12 +74,6 @@ func LoginCas(username, password, captcha string, jsessionid *http.Cookie) (*htt
 	if err != nil {
 		return nil, err
 	}
-	bodyBytes, err = io.ReadAll(resp.Body)
-	defer resp.Body.Close()
-	if err != nil {
-		return nil, err
-	}
-	body = string(bodyBytes)
 
 	// 检查是否登录成功，若成功，则响应Cookie里有TGC
 	var tgc *http.Cookie = nil
@@ -88,8 +88,14 @@ func LoginCas(username, password, captcha string, jsessionid *http.Cookie) (*htt
 }
 
 // NewSessionAndGetRawCaptcha新起一个会话，获得验证码，返回这个验证码图片，以及此次会话的JSESSIONID。
-func NewSessionAndGetRawCaptcha() (image.Image, *http.Cookie, error) {
-	resp, err := http.Get(CAS_CAPTCHA)
+func NewSessionAndGetRawCaptcha(fakeHeader map[string]string) (image.Image, *http.Cookie, error) {
+	req, err := http.NewRequest("GET", CAS_CAPTCHA, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	addHeaders(req, fakeHeader)
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -111,4 +117,11 @@ func NewSessionAndGetRawCaptcha() (image.Image, *http.Cookie, error) {
 	}
 
 	return ret, jsessionid, nil
+}
+
+// addHeaders伪造头部，用于通过安全检查，获取可用TGC。细节请看文档。
+func addHeaders(req *http.Request, fakeHeader map[string]string) {
+	for k, v := range fakeHeader {
+		req.Header.Add(k, v)
+	}
 }
