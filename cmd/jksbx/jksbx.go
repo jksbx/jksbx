@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"jksbx/cmd/jksbx/router"
 	"jksbx/internal/pkg/jlog"
+	"jksbx/internal/pkg/userdb"
 	"jksbx/pkg/captcha"
 	"net/http"
+	"time"
 )
 
 //go:embed model.bin
@@ -22,6 +24,10 @@ func main() {
 		panic(err)
 	}
 	captcha.Initialize(m)
+
+	// 初始化userdb并启动任务。
+	userdb.Initialize("user.db")
+	userdb.StartAutoJob(time.Hour)
 
 	// 初始化WEB服务器。
 	router.InitializeApiEndpoints(false)
