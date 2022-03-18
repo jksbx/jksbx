@@ -2,17 +2,21 @@ package jksb
 
 import (
 	"context"
-	"fmt"
+	_ "embed"
 	"net/http"
 	"time"
 
 	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 )
 
 const (
 	JKSB_LOGIN_URL = "https://cas.sysu.edu.cn/cas/login?service=http://jksb.sysu.edu.cn/infoplus/login?retUrl=http://jksb.sysu.edu.cn/infoplus/form/XNYQSB/start"
 )
+
+//go:embed bypass.js
+var bypassScript string
 
 type Session struct {
 	timeoutCtx    context.Context
@@ -25,22 +29,22 @@ type Session struct {
 	waitingDone      chan struct{}
 }
 
-// NewSession新建一个新的会话。
-func NewSession(timeout time.Duration) *Session {
+// NewSession新建一个新的会话，需要指定超时、浏览器UA、以及是否要显示浏览器窗口。
+func NewSession(timeout time.Duration, ua string, headful bool) *Session {
 	ret := &Session{}
 	ret.timeoutCtx, ret.timeoutCancel = context.WithTimeout(context.Background(), timeout)
 
-	ret.allocCtx, _ = chromedp.NewExecAllocator(
-		ret.timeoutCtx,
-
-		append(
-			chromedp.DefaultExecAllocatorOptions[:],
-			chromedp.Flag("headless", false),
-			chromedp.Flag("enable-automation", false),
-			chromedp.Flag("disable-blink-features", "AutomationControlled"),
-		)...,
+	opts := append(
+		chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.Flag("enable-automation", false),
+		chromedp.Flag("disable-blink-features", "AutomationControlled"),
+		chromedp.UserAgent(ua),
 	)
+	if headful {
+		opts = append(opts, chromedp.Flag("headless", false))
+	}
 
+	ret.allocCtx, _ = chromedp.NewExecAllocator(ret.timeoutCtx, opts...)
 	ret.clientCtx, _ = chromedp.NewContext(ret.allocCtx)
 
 	ret.postSet = map[network.RequestID]struct{}{}
@@ -52,7 +56,6 @@ func NewSession(timeout time.Duration) *Session {
 		case *network.EventRequestWillBeSent:
 			if ev.Request.Method == "POST" {
 				ret.postSet[ev.RequestID] = struct{}{}
-				fmt.Println("WillBeSent", ev.Request.URL, ev.RequestID, len(ret.postSet), ret.numRemainedPosts)
 			}
 		case *network.EventLoadingFailed:
 			if _, ok := ret.postSet[ev.RequestID]; ok {
@@ -60,7 +63,6 @@ func NewSession(timeout time.Duration) *Session {
 				if ret.numRemainedPosts == 0 {
 					ret.waitingDone <- struct{}{}
 				}
-				fmt.Println("LoadingFailed", ev.RequestID, len(ret.postSet), ret.numRemainedPosts)
 			}
 		case *network.EventLoadingFinished:
 			if _, ok := ret.postSet[ev.RequestID]; ok {
@@ -68,48 +70,12 @@ func NewSession(timeout time.Duration) *Session {
 				if ret.numRemainedPosts == 0 {
 					ret.waitingDone <- struct{}{}
 				}
-				fmt.Println("LoadingFinished", ev.RequestID, len(ret.postSet), ret.numRemainedPosts)
 			}
 		}
 	})
 
 	return ret
 }
-
-// LoginJksb将登录进jksb系统。
-// func (s *Session) LoginJksb(username, password string) error {
-// 	// 获取验证码数据。
-// 	var captchaBytes []byte
-// 	err := chromedp.Run(s.clientCtx,
-// 		chromedp.Navigate(JKSB_LOGIN_URL),
-// 		chromedp.Screenshot("#captchaImg", &captchaBytes, chromedp.NodeVisible),
-// 	)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	captchaImage, err := png.Decode(bytes.NewReader(captchaBytes))
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	capt := captcha.Recognize(captchaImage)
-// 	err = chromedp.Run(s.clientCtx,
-// 		chromedp.WaitVisible("#username", chromedp.ByID),
-// 		chromedp.SetValue("#username", username, chromedp.ByID),
-// 		chromedp.WaitVisible("#password", chromedp.ByID),
-// 		chromedp.SetValue("#password", password, chromedp.ByID),
-// 		chromedp.WaitVisible("#captcha", chromedp.ByID),
-// 		chromedp.SetValue("#captcha", capt, chromedp.ByID),
-// 		chromedp.Click(`//*[@value="LOGIN"]`, chromedp.BySearch),
-// 		chromedp.Click(`#form_command_bar > li:first-child > a`, chromedp.ByQuery),
-// 	)
-// 	if err != nil {
-// 		fmt.Println(err)
-// 	}
-
-// 	return nil
-// }
 
 // LoginJksb用TGC和JSESSIONID登入jksb系统，注意fakeHeader应该与登录cas时的一致。
 func (s *Session) LoginJksb(tgc, jsessionid *http.Cookie, fakeHeader map[string]string) error {
@@ -122,6 +88,7 @@ func (s *Session) LoginJksb(tgc, jsessionid *http.Cookie, fakeHeader map[string]
 	s.numRemainedPosts = 3
 	err := chromedp.Run(s.clientCtx,
 		network.SetExtraHTTPHeaders(network.Headers(temFakeHeader)),
+		chromedp.ActionFunc(bypassAction),
 		setCookie(tgc.Name, tgc.Value, "cas.sysu.edu.cn", "/cas/", true, true),
 		setCookie(jsessionid.Name, jsessionid.Value, "cas.sysu.edu.cn", "/cas", true, false),
 		chromedp.Navigate(JKSB_LOGIN_URL),
@@ -177,4 +144,9 @@ func (s *Session) SubmitJksb() error {
 	s.timeoutCancel()
 
 	return nil
+}
+
+func bypassAction(ctx context.Context) error {
+	_, err := page.AddScriptToEvaluateOnNewDocument(bypassScript).Do(ctx)
+	return err
 }
