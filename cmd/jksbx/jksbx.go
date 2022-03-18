@@ -3,7 +3,7 @@ package main
 import (
 	"bytes"
 	_ "embed"
-	"fmt"
+	"flag"
 	"jksbx/cmd/jksbx/router"
 	"jksbx/internal/pkg/jlog"
 	"jksbx/internal/pkg/userdb"
@@ -17,24 +17,40 @@ import (
 var defaultModelData []byte
 
 func main() {
-	fmt.Println("Hello from jksbx.")
+	// 解析命令行参数。
+	headfulMode := flag.Bool("e", false, "是否需要有头浏览器，忽略则为不需要，即用无头浏览器提交健康申报表")
+	userDataFilename := flag.String("u", "user.db", "用户数据库文件路径，忽略则为当前目录的user.db")
+	everydayHm := flag.Int("s", 730, "每天开始自动申报的时间，格式为24小时制HHMM，如七点半为730，晚上八点整为2000")
+	modelFilename := flag.String("m", "", "OCR模型文件路径，忽略则使用内置默认模型")
+	flag.Parse()
 
 	// 加载OCR模型数据并初始化模型。
-	m, err := captcha.LoadModel(bytes.NewReader(defaultModelData))
+	var m captcha.Model
+	var err error
+	if *modelFilename == "" {
+		m, err = captcha.LoadModel(bytes.NewReader(defaultModelData))
+	} else {
+		m, err = captcha.LoadModelFile(*modelFilename)
+	}
 	if err != nil {
 		panic(err)
 	}
 	captcha.Initialize(m)
 
 	// 初始化userdb并启动任务。
-	userdb.Initialize("user.db")
+	userdb.Initialize(*userDataFilename)
 	userdb.StartAutoJob(time.Hour)
 
 	// 初始化每日健康申报任务
-	everyday.StartEverydayJob(7, 30, router.EveryoneSubmitJksb)
+	hour := *everydayHm / 100
+	minute := *everydayHm % 100
+	if hour < 0 || hour >= 24 || minute < 0 || minute >= 60 {
+		panic("开始申报时间格式不正确")
+	}
+	everyday.StartEverydayJob(hour, minute, router.EveryoneSubmitJksb)
 
 	// 初始化WEB服务器。
-	router.InitializeApiEndpoints(false)
+	router.InitializeApiEndpoints(*headfulMode)
 	address := ":8080"
 	jlog.Infof("服务器启动，地址为：%s", address)
 	err = http.ListenAndServe(address, nil)
