@@ -87,7 +87,7 @@ func checkPasswordFromCas(username, password string) bool {
 
 // loginCas试图登录cas系统，返回TGC和JSESSIONID。若失败，TGC为nil。
 func loginCas(username, password string) (*http.Cookie, *http.Cookie) {
-	numTryLogin := 10
+	numTryLogin := 5
 	numTryCaptcha := 30
 
 	var tgc, jsessionid *http.Cookie
@@ -103,10 +103,10 @@ func loginCas(username, password string) (*http.Cookie, *http.Cookie) {
 				break
 			}
 			capt = captcha.Recognize(captchaImage)
-			if capt == "" {
-				jlog.Warnf("%s验证码无法识别", username)
-				continue
+			if capt != "" {
+				break
 			}
+			jlog.Warnf("%s验证码无法识别", username)
 		}
 
 		if capt == "" {
@@ -119,10 +119,10 @@ func loginCas(username, password string) (*http.Cookie, *http.Cookie) {
 			jlog.Warnf("%s登录cas系统时出现问题", username)
 			continue
 		}
-		if tgc == nil {
-			jlog.Warnf("%s登录cas系统时，验证码识别失败，或密码错误", username)
-			continue
+		if tgc != nil {
+			break
 		}
+		jlog.Warnf("%s登录cas系统时，验证码识别错误，或密码错误", username)
 	}
 
 	return tgc, jsessionid
