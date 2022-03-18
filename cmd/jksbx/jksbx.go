@@ -8,6 +8,7 @@ import (
 	"jksbx/internal/pkg/jlog"
 	"jksbx/internal/pkg/userdb"
 	"jksbx/pkg/captcha"
+	"jksbx/pkg/everyday"
 	"net/http"
 	"time"
 )
@@ -28,6 +29,9 @@ func main() {
 	// 初始化userdb并启动任务。
 	userdb.Initialize("user.db")
 	userdb.StartAutoJob(time.Hour)
+
+	// 初始化每日健康申报任务
+	everyday.StartEverydayJob(7, 30, router.EveryoneSubmitJksb)
 
 	// 初始化WEB服务器。
 	router.InitializeApiEndpoints(false)

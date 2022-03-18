@@ -5,11 +5,30 @@ import (
 	"image"
 	"jksbx/internal/pkg/jksb"
 	"jksbx/internal/pkg/jlog"
+	"jksbx/internal/pkg/userdb"
 	"jksbx/pkg/captcha"
 	"jksbx/pkg/cas"
 	"net/http"
 	"time"
 )
+
+// EveryoneSubmitJksb将对目前数据库中的所有用户提交健康申报申请。
+func EveryoneSubmitJksb() {
+	failUsers := map[string]string{}
+	userdb.ForEach(func(username, password string) {
+		if err := submitJskb(username, password); err != nil {
+			failUsers[username] = password
+		}
+	})
+
+	for i := 0; i < 2; i++ {
+		for username, password := range failUsers {
+			if err := submitJskb(username, password); err == nil {
+				delete(failUsers, username)
+			}
+		}
+	}
+}
 
 // getUserInfoFromForm从请求体中获取用户账户名和密码。如果没找到相关信息，则返回错误。
 func getUserInfoFromForm(r *http.Request) (string, string, error) {

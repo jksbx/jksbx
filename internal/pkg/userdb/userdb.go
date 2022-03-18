@@ -84,6 +84,16 @@ func ExistsUser(username string) bool {
 	return ok
 }
 
+// ForEach将handler应用到每一名用户上。
+func ForEach(handler func(username, password string)) {
+	userMutex.RLock()
+	defer userMutex.RUnlock()
+
+	for username, password := range userData {
+		handler(username, password)
+	}
+}
+
 // StartAutoJob起一个协程，来定时写盘，并且侦测<Ctrl-C>来写盘。
 func StartAutoJob(duration time.Duration) {
 	ticker := time.NewTicker(duration)
