@@ -1,14 +1,8 @@
 package router
 
 import (
-	"fmt"
-	"image"
-	"jksbx/internal/pkg/jksb"
-	"jksbx/internal/pkg/jlog"
-	"jksbx/pkg/captcha"
-	"jksbx/pkg/cas"
+	"jksbx/internal/pkg/userdb"
 	"net/http"
-	"time"
 )
 
 var fakeHeader map[string]string
@@ -34,16 +28,16 @@ func InitializeApiEndpoints(head bool) {
 	}
 	headful = head
 
-	// /api/test 接收username和password，并进行一次提交健康申报表的测试。
+	// POST /api/test 接收username和password，并进行一次提交健康申报表的测试。
 	http.HandleFunc("/api/test", func(rw http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
-			rw.WriteHeader(404)
+			rw.WriteHeader(405)
 			rw.Write([]byte("请求非POST方法"))
 			return
 		}
 		username, password, err := getUserInfoFromForm(r)
 		if err != nil {
-			rw.WriteHeader(404)
+			rw.WriteHeader(400)
 			rw.Write([]byte(err.Error()))
 			return
 		}
@@ -57,88 +51,58 @@ func InitializeApiEndpoints(head bool) {
 
 		rw.Write([]byte("done"))
 	})
-}
 
-// getUserInfoFromForm从请求体中获取用户账户名和密码。如果没找到相关信息，则返回错误。
-func getUserInfoFromForm(r *http.Request) (string, string, error) {
-	err := r.ParseForm()
-	if err != nil {
-		return "", "", err
-	}
-
-	username := r.PostFormValue("username")
-	if username == "" {
-		return "", "", fmt.Errorf("未填写用户名")
-	}
-	password := r.PostFormValue("password")
-	if password == "" {
-		return "", "", fmt.Errorf("未填写密码")
-	}
-
-	return username, password, nil
-}
-
-// submitJksb将根据账户名和密码尝试提交健康申报表。
-func submitJskb(username, password string) error {
-	jlog.Infof("%s开始提交申报表，开始登录cas系统", username)
-
-	numTryLogin := 10
-	numTryCaptcha := 30
-
-	var tgc, jsessionid *http.Cookie
-	for i := 0; i < numTryLogin; i++ {
-		capt := ""
-		for j := 0; j < numTryCaptcha; j++ {
-			var captchaImage image.Image
-			var err error
-
-			captchaImage, jsessionid, err = cas.NewSessionAndGetRawCaptcha(fakeHeader)
-			if err != nil {
-				jlog.Warnf("%s获取验证码失败：%s", username, err.Error())
-				break
-			}
-			capt = captcha.Recognize(captchaImage)
-			if capt == "" {
-				jlog.Warnf("%s验证码无法识别", username)
-				continue
-			}
+	// POST /api/adduser 接收username和password，存入后台数据库中。如果已经存在了，则为no-op。
+	http.HandleFunc("/api/adduser", func(rw http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			rw.WriteHeader(405)
+			rw.Write([]byte("请求非POST方法"))
+			return
 		}
-
-		if capt == "" {
-			continue
-		}
-
-		var err error
-		tgc, err = cas.LoginCas(username, password, capt, jsessionid, fakeHeader)
+		username, password, err := getUserInfoFromForm(r)
 		if err != nil {
-			jlog.Warnf("%s登录cas系统时出现问题", username)
-			continue
+			rw.WriteHeader(400)
+			rw.Write([]byte(err.Error()))
+			return
 		}
-		if tgc == nil {
-			jlog.Warnf("%s登录cas系统时，验证码识别失败，或密码错误", username)
-			continue
+
+		if userdb.ExistsUser(username) {
+			rw.WriteHeader(406)
+			rw.Write([]byte("账户已经存在，不可添加。修改密码请先用旧密码删除，再添加"))
+			return
 		}
-	}
 
-	if tgc == nil {
-		jlog.Errorf("%s登录cas系统失败", username)
-		return fmt.Errorf("登录cas系统失败")
-	}
+		if !checkPasswordFromCas(username, password) {
+			rw.WriteHeader(406)
+			rw.Write([]byte("密码可能不正确，请检查密码后重试"))
+			return
+		}
 
-	jlog.Infof("%s开始登录jksb系统并提交申报表", username)
-	s := jksb.NewSession(time.Minute*2, fakeHeader["User-Agent"], headful)
-	err := s.LoginJksb(tgc, jsessionid, fakeHeader)
-	if err != nil {
-		jlog.Errorf("%s登录jksb系统失败，有可能是网站下线了？%s", username, err.Error())
-		return err
-	}
+		userdb.AddUser(username, password)
+		rw.Write([]byte("done"))
+	})
 
-	err = s.SubmitJksb()
-	if err != nil {
-		jlog.Errorf("%s提交申报表失败：%s", username, err.Error())
-		return err
-	}
+	// POST /api/deleteuser 接收username和password，如果密码正确，则删除用户。
+	http.HandleFunc("/api/deleteuser", func(rw http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			rw.WriteHeader(405)
+			rw.Write([]byte("请求非POST方法"))
+			return
+		}
+		username, password, err := getUserInfoFromForm(r)
+		if err != nil {
+			rw.WriteHeader(400)
+			rw.Write([]byte(err.Error()))
+			return
+		}
 
-	jlog.Infof("%s成功提交申报表", username)
-	return nil
+		if !userdb.CheckUser(username, password) {
+			rw.WriteHeader(406)
+			rw.Write([]byte("密码错误，或账户已经不在数据库中"))
+			return
+		}
+
+		userdb.DeleteUser(username)
+		rw.Write([]byte("done"))
+	})
 }

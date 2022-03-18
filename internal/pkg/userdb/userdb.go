@@ -50,6 +50,7 @@ func AddUser(username, password string) {
 	userMutex.Lock()
 	defer userMutex.Unlock()
 
+	jlog.Infof("新增用户%s", username)
 	userData[username] = password
 }
 
@@ -58,10 +59,11 @@ func DeleteUser(username string) {
 	userMutex.Lock()
 	defer userMutex.Unlock()
 
+	jlog.Infof("删除用户%s", username)
 	delete(userData, username)
 }
 
-// CheckUser检查数据库中是否存在这么一个用户。
+// CheckUser检查用户密码是否正确。
 func CheckUser(username, password string) bool {
 	userMutex.RLock()
 	defer userMutex.RUnlock()
@@ -71,6 +73,15 @@ func CheckUser(username, password string) bool {
 		return false
 	}
 	return pwd == password
+}
+
+// ExistsUser检查是否存在用户。
+func ExistsUser(username string) bool {
+	userMutex.RLock()
+	defer userMutex.RUnlock()
+
+	_, ok := userData[username]
+	return ok
 }
 
 // StartAutoJob起一个协程，来定时写盘，并且侦测<Ctrl-C>来写盘。
