@@ -1,12 +1,16 @@
 package router
 
 import (
+	_ "embed"
 	"jksbx/internal/pkg/userdb"
 	"net/http"
 )
 
 var fakeHeader map[string]string
 var headful bool
+
+//go:embed index.html
+var indexPage []byte
 
 // InitializeApiEndpoints将为所有API入口注册处理函数，需要指定后台提交申报表时，
 // 是否需要显示浏览器界面（即是否要有头浏览器）。
@@ -29,7 +33,7 @@ func InitializeApiEndpoints(head bool) {
 	headful = head
 
 	// POST /api/test 接收username和password，并进行一次提交健康申报表的测试。
-	http.HandleFunc("/api/test", func(rw http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/api/submit", func(rw http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			rw.WriteHeader(405)
 			rw.Write([]byte("请求非POST方法"))
@@ -49,7 +53,7 @@ func InitializeApiEndpoints(head bool) {
 			return
 		}
 
-		rw.Write([]byte("done"))
+		rw.Write([]byte("测试结束，可以去微信查看是否有收到申报成功提示"))
 	})
 
 	// POST /api/adduser 接收username和password，存入后台数据库中。如果已经存在了，则为no-op。
@@ -79,7 +83,7 @@ func InitializeApiEndpoints(head bool) {
 		}
 
 		userdb.AddUser(username, password)
-		rw.Write([]byte("done"))
+		rw.Write([]byte("添加账户成功"))
 	})
 
 	// POST /api/deleteuser 接收username和password，如果密码正确，则删除用户。
@@ -103,6 +107,17 @@ func InitializeApiEndpoints(head bool) {
 		}
 
 		userdb.DeleteUser(username)
-		rw.Write([]byte("done"))
+		rw.Write([]byte("删除账户成功"))
+	})
+
+	// GET /
+	http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			rw.WriteHeader(405)
+			rw.Write([]byte("请求非GET方法"))
+			return
+		}
+		rw.Header().Add("Content-Type", "text/html")
+		rw.Write(indexPage)
 	})
 }

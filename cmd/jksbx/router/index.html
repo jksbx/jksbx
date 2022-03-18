@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>jksbx</title>
+  </head>
+  <body>
+    <a href="https://github.com/jksbx/jksbx">GitHub Repo</a><br><br>
+
+    <form method="post" style="line-height: 2;">
+      <input type="text" name="username" placeholder="NetID"><br>
+      <input type="password" name="password" placeholder="Password"><br>
+      <div>
+        <button type="submit" formaction="/api/submit">测试</button>
+        <button type="submit" formaction="/api/adduser">添加</button>
+        <button type="submit" formaction="/api/deleteuser">删除</button>
+      </div>
+    </form>
+
+    <div style="line-height: 1.4;">
+      <h2>使用方法</h2>
+      输入NetID和Password后，
+      <ol>
+        <li>点击<em>测试</em>，浏览器将向后台发送NetID和Password，后台将尝试为你提交一次健康申报，如果成功，微信应该会收到提示。</li>
+        <li>点击<em>添加</em>，浏览器将向后台发送NetID和Password，后台将用<em>登录校园网</em>的方式来验证密码是否正确，若正确，将会<strong style="color: red;">明文</strong>存储NetID和Password，未来将在每天早上都自动申报。</li>
+        <li>点击<em>删除</em>，浏览器将向后台发送NetID和Password，后台将对比和之前添加的账户密码是否一致，若一致，将会从后台数据库中删除，未来将不会再自动申报。</li>
+      </ol>
+
+      <h2>必读</h2>
+      <p>使用自己部署的项目更加安全。部署很容易，只需要Chrome浏览器（很可能已经有了）和此程序（可以直接在GitHub里下载编译好的可执行文件）即可，下载好后可以不进行任何配置，直接运行即可使用。</p>
+      <p>此页面仅为方便测试之用，如果使用，将面临如下<strong style="color: red;">风险</strong>：</p>
+      <ol>
+        <li>登录校园网时（即通过cas.xxxx.edu.cn登录时），浏览器是直接发送明文密码到大学服务器的，因此后台帮你提交健康申报表前登录校园网时，无论如何都需要发送明文密码才可以登录，这是不可避免的。换言之，你必须说出你的密码。</li>
+        <li>如果委托此网站帮忙做每日自动健康申报，你的密码将会被<strong style="color: red;">明文</strong>存储在后台数据库里，站长（也就是我，或者其他部署此项目的人）如果想看是可以看的。</li>
+      </ol>
+      <p>虽然如此，但是你仍然相对<strong style="color: blue">安全</strong>：</p>
+      <ol>
+        <li>只要网站引入了HTTPS（比如此网站），那么在不考虑设备受监控的情况下，你的密码<strong>在传输过程中</strong>不会泄漏。</li>
+      </ol>
+
+      <h2>合作</h2>
+      <p>此项目用Go语言实现，代码关键部分有中文注释，恳请一起合作。</p>
+      <p>主要的技术是验证码OCR和无头Chrome浏览器，NetID登录用的是发包的方式，到健康申报系统时才启用无头浏览器，因为健康申报系统有前端混淆JS代码加密Cookie的操作，而且会动态改变，做逆向的时间成本过高。</p>
+      <p>GitHub上有更加详细的文档。</p>
+    </div>
+  </body>
+</html>
