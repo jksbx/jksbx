@@ -2,8 +2,12 @@ package router
 
 import (
 	_ "embed"
+	"fmt"
+	"jksbx/internal/pkg/jlog"
 	"jksbx/internal/pkg/userdb"
 	"net/http"
+	"sync"
+	"time"
 )
 
 var fakeHeader map[string]string
@@ -12,9 +16,14 @@ var headful bool
 //go:embed index.html
 var indexPage []byte
 
+type userInfo struct {
+	username string
+	password string
+}
+
 // InitializeApiEndpoints将为所有API入口注册处理函数，需要指定后台提交申报表时，
 // 是否需要显示浏览器界面（即是否要有头浏览器）。
-func InitializeApiEndpoints(head bool) {
+func InitializeApiEndpoints(head bool, queueSize, concurrency int) {
 	fakeHeader = map[string]string{
 		"Connection":                "keep-alive",
 		"sec-ch-ua":                 `" Not A;Brand";v="99", "Chromium";v="99"`,
@@ -32,7 +41,34 @@ func InitializeApiEndpoints(head bool) {
 	}
 	headful = head
 
-	// POST /api/test 接收username和password，并进行一次提交健康申报表的测试。
+	requestQueue := make(chan userInfo, queueSize)
+	inQueue := map[string]struct{}{}
+	inQueueMutex := sync.RWMutex{}
+	// 这个值不是那么重要，因此不加锁
+	meanDuration := 10.0
+
+	// 起若干个协程来并发处理请求。
+	for i := 0; i < concurrency; i++ {
+		go func(goroutineId int) {
+			for {
+				u := <-requestQueue
+				jlog.Infof("协程#%03d开始处理%s，队列大小%d", goroutineId, u.username, len(requestQueue))
+
+				startTime := time.Now()
+				err := submitJskb(u.username, u.password)
+				if err == nil {
+					duration := time.Since(startTime)
+					meanDuration = meanDuration*0.75 + duration.Seconds()*0.25
+				}
+
+				inQueueMutex.Lock()
+				delete(inQueue, u.username)
+				inQueueMutex.Unlock()
+			}
+		}(i)
+	}
+
+	// POST /api/test 接收username和password，并将提交健康申报表的申请加入等待队列，如果队列已满则此次申请将不会被处理，会提示客户端。
 	http.HandleFunc("/api/submit", func(rw http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			rw.WriteHeader(405)
@@ -46,14 +82,29 @@ func InitializeApiEndpoints(head bool) {
 			return
 		}
 
-		err = submitJskb(username, password)
-		if err != nil {
-			rw.WriteHeader(500)
-			rw.Write([]byte(err.Error()))
+		// 检查是否已经在队列里
+		inQueueMutex.RLock()
+		_, ok := inQueue[username]
+		inQueueMutex.RUnlock()
+		if ok {
+			rw.WriteHeader(429)
+			rw.Write([]byte("此用户已经在申请队列中"))
 			return
 		}
 
-		rw.Write([]byte("测试结束，可以去微信查看是否有收到申报成功提示"))
+		inQueueMutex.Lock()
+		select {
+		case requestQueue <- userInfo{username: username, password: password}:
+			inQueue[username] = struct{}{}
+			waiting := float64(len(inQueue)) * meanDuration
+			inQueueMutex.Unlock()
+			msg := fmt.Sprintf("已经加入申请队列中，预计需等待%.0f秒后，可查看微信是否有申报成功提示，如果没有，则表示申报可能失败，最可能的原因是密码错误，还有可能是jksb系统下线了（每天凌晨0点后会下线），极小可能是自动识别验证码错误", waiting)
+			rw.Write([]byte(msg))
+		default:
+			inQueueMutex.Unlock()
+			rw.WriteHeader(503)
+			rw.Write([]byte("请求队列已满，请过几秒或几分钟再尝试"))
+		}
 	})
 
 	// POST /api/adduser 接收username和password，存入后台数据库中。如果已经存在了，则为no-op。
