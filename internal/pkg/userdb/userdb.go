@@ -50,8 +50,8 @@ func AddUser(username, password string) {
 	userMutex.Lock()
 	defer userMutex.Unlock()
 
-	jlog.Infof("新增用户%s", username)
 	userData[username] = password
+	jlog.Infof("新增用户%s，目前有%d名", username, len(userData))
 }
 
 // DeleteUser原子地删除一名用户。
@@ -59,8 +59,8 @@ func DeleteUser(username string) {
 	userMutex.Lock()
 	defer userMutex.Unlock()
 
-	jlog.Infof("删除用户%s", username)
 	delete(userData, username)
+	jlog.Infof("删除用户%s，目前有%d名", username, len(userData))
 }
 
 // CheckUser检查用户密码是否正确。

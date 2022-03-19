@@ -19,9 +19,10 @@ var defaultModelData []byte
 func main() {
 	// 解析命令行参数。
 	headfulMode := flag.Bool("e", false, "是否需要有头浏览器，忽略则为不需要，即用无头浏览器提交健康申报表")
-	userDataFilename := flag.String("u", "user.db", "用户数据库文件路径，忽略则为当前目录的user.db")
 	everydayHm := flag.Int("s", 730, "每天开始自动申报的时间，格式为24小时制HHMM，如七点半为730，晚上八点整为2000")
-	modelFilename := flag.String("m", "", "OCR模型文件路径，忽略则使用内置默认模型")
+	address := flag.String("a", ":8080", "WEB服务的监听地址，默认监听 0.0.0.0:8080")
+	userDataFilename := flag.String("u", "user.db", "用户数据库文件路径，忽略则为当前目录的user.db")
+	modelFilename := flag.String("m", "", "OCR模型文件路径，忽略则使用内嵌默认模型")
 	flag.Parse()
 
 	// 加载OCR模型数据并初始化模型。
@@ -37,11 +38,11 @@ func main() {
 	}
 	captcha.Initialize(m)
 
-	// 初始化userdb并启动任务。
+	// 初始化userdb并启动服务。
 	userdb.Initialize(*userDataFilename)
 	userdb.StartAutoJob(time.Hour)
 
-	// 初始化每日健康申报任务
+	// 初始化每日健康申报任务。
 	hour := *everydayHm / 100
 	minute := *everydayHm % 100
 	if hour < 0 || hour >= 24 || minute < 0 || minute >= 60 {
@@ -51,9 +52,8 @@ func main() {
 
 	// 初始化WEB服务器。
 	router.InitializeApiEndpoints(*headfulMode)
-	address := ":8080"
-	jlog.Infof("服务器启动，地址为：%s", address)
-	err = http.ListenAndServe(address, nil)
+	jlog.Infof("服务器启动，地址为：%s", *address)
+	err = http.ListenAndServe(*address, nil)
 	if err != nil {
 		panic(err)
 	}

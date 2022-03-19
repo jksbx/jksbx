@@ -51,7 +51,7 @@ func getUserInfoFromForm(r *http.Request) (string, string, error) {
 
 // submitJksb将根据账户名和密码尝试提交健康申报表。
 func submitJskb(username, password string) error {
-	jlog.Infof("%s开始提交申报表，开始登录cas系统", username)
+	jlog.Infof("%s Phase 1. 开始登录cas系统", username)
 	tgc, jsessionid := loginCas(username, password)
 
 	if tgc == nil {
@@ -59,7 +59,7 @@ func submitJskb(username, password string) error {
 		return fmt.Errorf("登录cas系统失败")
 	}
 
-	jlog.Infof("%s开始登录jksb系统并提交申报表", username)
+	jlog.Infof("%s Phase 2. 开始登录jksb系统并提交申报表", username)
 	s := jksb.NewSession(time.Minute*2, fakeHeader["User-Agent"], headful)
 	err := s.LoginJksb(tgc, jsessionid, fakeHeader)
 	if err != nil {
@@ -73,7 +73,7 @@ func submitJskb(username, password string) error {
 		return err
 	}
 
-	jlog.Infof("%s成功提交申报表", username)
+	jlog.Infof("%s Phase 3. 成功提交申报表", username)
 	return nil
 }
 
